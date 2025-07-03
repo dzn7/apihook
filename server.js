@@ -9,7 +9,7 @@ const PORT = process.env.PORT || 3000;
 
 // --- CONFIGURAÇÕES IMPORTANTES ---
 const YOUR_FRONTEND_RENDER_URL = "https://acaiemcasasite.onrender.com"; 
-const YOUR_BACKEND_RENDER_URL = "https://apihook.onrender.com"; // <-- Use a URL real do seu backend aqui
+const YOUR_BACKEND_RENDER_URL = "https://apihook.onrender.com"; 
 
 const client = new MercadoPagoConfig({
     accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN 
@@ -57,6 +57,9 @@ app.post('/create-mercadopago-pix', async (req, res) => {
             items: items,
             payer: {
                 name: customerName,
+                // Opcional, mas útil para o Mercado Pago e para o Pix
+                // Se você não coleta o email, pode deixar vazio ou um dummy
+                email: "comprador@email.com" 
             },
             notification_url: `${YOUR_BACKEND_RENDER_URL}/mercadopago-webhook`, 
             
@@ -68,14 +71,56 @@ app.post('/create-mercadopago-pix', async (req, res) => {
             auto_return: "approved", 
             
             payment_methods: {
+                // Remove credit_card e debit_card do excluded_payment_types para usar excluded_payment_methods
+                excluded_payment_types: [
+                    { id: "ticket" } // Exclui boleto
+                ],
+                excluded_payment_methods: [
+                    // Excluir métodos de cartão de crédito e débito explicitamente, se necessário.
+                    // Em geral, para Pix transparente, basta focar no local_payment_id.
+                ],
+                installments: 1 // Pix é sempre à vista
+            },
+            external_reference: externalReference,
+            
+            // --- ADIÇÃO CRÍTICA PARA OBTER DADOS DO PIX TRANSPARENTE ---
+            // Indica o método de processamento do pagamento (Pix)
+            processing_modes: ["aggregator"], // Ou "gateway" dependendo da sua conta/setup
+            // Específica o método de pagamento local (Pix)
+            // local_payment_id: "pix", // API antiga, pode não ser necessária com payment_methods.excluded_payment_types
+            
+            // Uma das formas de forçar o Pix e obter o point_of_interaction
+            // É garantir que apenas o payment_type 'pix' seja válido
+            // O ideal é não usar excluded_payment_types, mas sim 'default_payment_method_id' ou similar
+            // Para garantir que venha o PIX:
+            payment_methods: {
+                default_payment_method_id: null, // Para não forçar cartão
                 excluded_payment_types: [
                     { id: "credit_card" },
                     { id: "debit_card" },
                     { id: "ticket" }
                 ],
-                installments: 1
+                // Ou, uma abordagem melhor é forçar PIX com "transaction_data.qr_code" diretamente
+                // Mas para Preferences, a estrutura é a que temos.
             },
-            external_reference: externalReference 
+            // Em algumas APIs do Mercado Pago, a propriedade `binary_mode: true` e a inclusão de email
+            // são importantes para o retorno do point_of_interaction.
+
+            // Vou refatorar a section payment_methods e adicionar o campo email, pois estes podem influenciar o retorno.
+            payer: {
+                name: customerName,
+                email: "test_user_123456@test.com" // Email é frequentemente obrigatório ou recomendado. Use um email dummy se não coletar do cliente.
+            },
+            // A prioridade agora é ter certeza que a SDK está focando no Pix.
+            // Para Checkout API transparente de Pix, não usamos Preferences.
+            // O erro "point_of_interaction" geralmente ocorre com Payments API ou Checkout Pro,
+            // mas para Preferences, a documentação implica que ele *deveria* estar lá para Pix.
+            // A chave pode ser o `items` e a `payer` information, ou o `binary_mode`.
+
+            // Vamos tentar adicionar binary_mode:
+            binary_mode: true, // Isso força que a transação seja aprovada ou rejeitada imediatamente, sem pendência.
+                               // Ajuda o Mercado Pago a saber que é para um fluxo de pagamento direto.
+
         };
 
         // --- NOVO LOG: O que está sendo enviado para o Mercado Pago ---
@@ -90,7 +135,7 @@ app.post('/create-mercadopago-pix', async (req, res) => {
 
         // Verifica se a estrutura esperada existe antes de tentar acessá-la
         if (!response || !response.body || !response.body.point_of_interaction || !response.body.point_of_interaction.transaction_data) {
-            console.error('Estrutura de resposta inesperada do Mercado Pago:', response);
+            console.error('Estrutura de resposta inesperada do Mercado Pago (falha no point_of_interaction):', JSON.stringify(response, null, 2));
             return res.status(500).json({ 
                 status: 'error', 
                 message: 'Resposta do Mercado Pago não contém dados de Pix esperados.', 
@@ -110,13 +155,13 @@ app.post('/create-mercadopago-pix', async (req, res) => {
 
     } catch (error) {
         console.error('Erro geral na rota /create-mercadopago-pix:', 
-            error.response ? error.response.data : error.message, // Detalhes da resposta de erro do MP
-            error.response ? `HTTP Status: ${error.response.status}` : '' // Status HTTP do erro do MP
+            error.response ? error.response.data : error.message, 
+            error.response ? `HTTP Status: ${error.response.status}` : '' 
         );
         res.status(500).json({ 
             status: 'error', 
             message: 'Erro ao processar o pagamento com Mercado Pago. Tente novamente.', 
-            details: error.message // Use error.message que vem do catch para o frontend
+            details: error.response ? (error.response.data || error.message) : error.message 
         });
     }
 });
