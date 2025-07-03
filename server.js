@@ -34,19 +34,19 @@ app.use(express.json());
 // Rota para criar um pagamento Pix
 app.post('/create-mercadopago-pix', async (req, res) => {
     try {
-        // ***** MUDANÇA MAIS IMPORTANTE AQUI: total e novos campos de cliente *****
-        const { customerName, customerEmail, customerPhone, cartItems, delivery, total } = req.body;
+        // ***** MUDANÇA PRINCIPAL AQUI: Desestruturamos todos os campos enviados pelo frontend *****
+        const { customerName, customerEmail, customerPhone, items, total, deliveryOption, paymentMethod, trocoPara } = req.body;
 
-        // Validação agora inclui 'total' e 'customerEmail' (obrigatório para Pix)
-        if (!customerName || !customerEmail || !cartItems || cartItems.length === 0 || !total) {
+        // Validação mais precisa: verifica os campos obrigatórios para o Pix
+        if (!customerName || !customerEmail || !items || items.length === 0 || !total) {
             console.error('Dados do pedido incompletos na requisição Pix:', req.body);
-            return res.status(400).json({ status: 'error', message: 'Dados do pedido incompletos (nome, email, itens ou total faltando).' });
+            return res.status(400).json({ status: 'error', message: 'Dados do pedido incompletos (nome, email, itens ou total faltando).', receivedData: req.body });
         }
 
         const externalReference = uuidv4(); // Gerar um ID único para o pedido
         let totalForPayment = total; // Usa o 'total' que veio da requisição
 
-        const description = cartItems.map(item => {
+        const description = items.map(item => { // Usa 'items' diretamente
             let itemDesc = item.name;
             if (item.complements && item.complements.length > 0) {
                 const compNames = item.complements.map(c => c.name).join(', ');
@@ -62,18 +62,17 @@ app.post('/create-mercadopago-pix', async (req, res) => {
             description: finalDescription,
             payment_method_id: 'pix',
             payer: {
-                email: customerEmail, // <-- AGORA USA O EMAIL REAL DO CLIENTE
+                email: customerEmail, // Usa o email do cliente
                 first_name: customerName,
-                // Opcional: Adicionar telefone do cliente
                 phone: customerPhone ? { area_code: customerPhone.substring(0,2), number: customerPhone.substring(2) } : undefined
-                // document_number: "...", // Se você coletar CPF
-                // document_type: "CPF"
             },
             metadata: {
                 external_reference_app: externalReference,
                 customer_name_app: customerName,
-                customer_email_app: customerEmail, // Opcional: Para seus registros
-                customer_phone_app: customerPhone, // Opcional: Para seus registros
+                customer_email_app: customerEmail,
+                customer_phone_app: customerPhone,
+                // Inclua aqui outros dados importantes do pedido, como os itens, para registrar no MP
+                // Ex: cart_items_details: JSON.stringify(items),
             },
             external_reference: externalReference,
             notification_url: `${YOUR_BACKEND_RENDER_URL}/mercadopago-webhook`,
