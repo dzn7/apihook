@@ -1,30 +1,29 @@
 require('dotenv').config(); // Carrega as variáveis de ambiente do arquivo .env
 
 const express = require('express');
-const { MercadoPagoConfig, Preference, Payment } = require('mercadopago'); // <-- MUDANÇA AQUI!
+const { MercadoPagoConfig, Preference, Payment } = require('mercadopago'); 
 const cors = require('cors');
 
 const app = express();
-const PORT = process.env.PORT || 3000; // Usa a porta do ambiente (Render) ou 3000 localmente
+const PORT = process.env.PORT || 3000; 
 
 // --- CONFIGURAÇÕES IMPORTANTES ---
 // **SUAS URLs REAIS DO RENDER**
-const YOUR_FRONTEND_RENDER_URL = "https://acaiemcasasite.onrender.com"; // URL do seu frontend
-const YOUR_BACKEND_RENDER_URL = "https://acaiemcasasite.onrender.com"; // Assumindo que o backend estará no mesmo domínio/subdomínio do Render. Ajuste se for diferente.
+// Lembre-se de ajustar estas URLs para as suas URLs reais no Render.
+const YOUR_FRONTEND_RENDER_URL = "https://acaiemcasasite.onrender.com"; 
+const YOUR_BACKEND_RENDER_URL = "https://acaiemcasasite.onrender.com"; 
 
 // **INICIALIZAÇÃO DA SDK DO MERCADO PAGO (CORRIGIDA PARA V2.x)**
 const client = new MercadoPagoConfig({
-    accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN // Lê o Access Token das variáveis de ambiente
+    accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN 
 });
-// A classe Preference é usada para criar preferências de pagamento (para Pix/checkout).
 const preference = new Preference(client);
-// A classe Payment é usada para buscar detalhes de pagamentos existentes (para webhooks).
 const payment = new Payment(client);
 
 
 // Middleware para habilitar CORS
 app.use(cors({
-    origin: YOUR_FRONTEND_RENDER_URL // Permite apenas requisições do seu frontend
+    origin: YOUR_FRONTEND_RENDER_URL 
 })); 
 
 // Middleware para parsear o corpo das requisições como JSON
@@ -42,8 +41,8 @@ app.post('/create-mercadopago-pix', async (req, res) => {
 
         const items = cartItems.map(item => ({
             title: item.productName,
-            unit_price: parseFloat(item.productPrice.toFixed(2)),
-            quantity: 1,
+            unit_price: parseFloat(item.productPrice.toFixed(2)), 
+            quantity: 1, 
             description: item.complements && item.complements.length > 0 
                          ? 'Com: ' + item.complements.map(c => c.name).join(', ') 
                          : 'Sem complementos'
@@ -60,17 +59,14 @@ app.post('/create-mercadopago-pix', async (req, res) => {
         const preferenceBody = {
             items: items,
             payer: {
-                // Para Pix, é útil ter o CPF/CNPJ se for Pessoa Jurídica
-                // Exemplo: identification: { type: "CPF", number: "12345678900" } 
-                // email: "email_do_cliente@example.com", // Se coletar o email
                 name: customerName,
             },
-            notification_url: `${https://acaiemcasasite.onrender.com/}/mercadopago-webhook`, 
+            notification_url: `${YOUR_BACKEND_RENDER_URL}/mercadopago-webhook`, 
             
             back_urls: {
-                success: `${https://acaiemcasasite.onrender.com/}/`,
-                failure: `${https://acaiemcasasite.onrender.com/}/`, 
-                pending: `$https://acaiemcasasite.onrender.com/}/` 
+                success: `${YOUR_FRONTEND_RENDER_URL}/`,
+                failure: `${YOUR_FRONTEND_RENDER_URL}/`, 
+                pending: `${YOUR_FRONTEND_RENDER_URL}/` 
             },
             auto_return: "approved", 
             
@@ -82,16 +78,9 @@ app.post('/create-mercadopago-pix', async (req, res) => {
                 ],
                 installments: 1
             },
-            external_reference: externalReference,
-            // A seguir, configurações específicas para PIX para que o checkout seja focado nele:
-            // binary_mode: true, // Para que o pagamento seja apenas aprovado ou rejeitado, sem pendências
-            // statement_descriptor: "ACAI_EM_CASA", // O texto que aparecerá na fatura do cliente (se aplicável)
-            // differential_pricing: { id: "some_id" }, // Se tiver tabela de preços diferenciada
-            // sponsor_id: 1234567, // Se for um sub-vendedor
-            // metadata: { "order_id": externalReference } // Metadados adicionais para seu controle
+            external_reference: externalReference 
         };
 
-        // **CHAMADA PARA CRIAR A PREFERÊNCIA (CORRIGIDA)**
         const response = await preference.create({ body: preferenceBody });
         
         const pixInfo = response.body.point_of_interaction.transaction_data;
@@ -99,7 +88,7 @@ app.post('/create-mercadopago-pix', async (req, res) => {
         res.status(200).json({
             status: 'success',
             message: 'Preferência de pagamento Pix criada com sucesso.',
-            paymentId: response.body.id,
+            paymentId: response.body.id, 
             qr_code_base64: pixInfo.qr_code_base64, 
             qr_code: pixInfo.qr_code,             
         });
@@ -127,8 +116,7 @@ app.post('/mercadopago-webhook', async (req, res) => {
         const paymentId = req.query.id; 
 
         try {
-            // **CHAMADA PARA BUSCAR PAGAMENTO (CORRIGIDA)**
-            const paymentDetails = await payment.get({ id: paymentId }); // Usar .get() com um objeto { id: ... }
+            const paymentDetails = await payment.get({ id: paymentId }); 
             const paymentStatus = paymentDetails.body.status; 
             const externalReference = paymentDetails.body.external_reference; 
 
