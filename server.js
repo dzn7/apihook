@@ -34,16 +34,18 @@ app.use(express.json());
 // Rota para criar um pagamento Pix
 app.post('/create-mercadopago-pix', async (req, res) => {
     try {
-        const { customerName, cartItems, delivery, totalAmount } = req.body;
+        // ***** MUDANÇA AQUI: de 'totalAmount' para 'total' *****
+        const { customerName, cartItems, delivery, total } = req.body;
 
-        // ***** AQUI ESTÁ A ÚNICA MUDANÇA: REMOÇÃO DE '!externalReference' *****
-        if (!customerName || !cartItems || cartItems.length === 0 || !totalAmount) {
+        // Validação agora usa 'total'
+        if (!customerName || !cartItems || cartItems.length === 0 || !total) {
             console.error('Dados do pedido incompletos na requisição Pix:', req.body);
             return res.status(400).json({ status: 'error', message: 'Dados do pedido incompletos.' });
         }
 
         const externalReference = uuidv4(); // Gerar um ID único para o pedido
-        let totalForPayment = totalAmount;
+        // ***** MUDANÇA AQUI: de 'totalAmount' para 'total' *****
+        let totalForPayment = total; // Usa o 'total' que veio da requisição
 
         const description = cartItems.map(item => {
             let itemDesc = item.name;
