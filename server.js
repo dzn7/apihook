@@ -8,12 +8,9 @@ const app = express();
 const PORT = process.env.PORT || 3000; 
 
 // --- CONFIGURAÇÕES IMPORTANTES ---
-// **SUAS URLs REAIS DO RENDER**
-// Lembre-se de ajustar estas URLs para as suas URLs reais no Render.
 const YOUR_FRONTEND_RENDER_URL = "https://acaiemcasasite.onrender.com"; 
-const YOUR_BACKEND_RENDER_URL = "https://acaiemcasasite.onrender.com"; 
+const YOUR_BACKEND_RENDER_URL = "https://apihook.onrender.com"; // <-- Use a URL real do seu backend aqui
 
-// **INICIALIZAÇÃO DA SDK DO MERCADO PAGO (CORRIGIDA PARA V2.x)**
 const client = new MercadoPagoConfig({
     accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN 
 });
@@ -81,8 +78,26 @@ app.post('/create-mercadopago-pix', async (req, res) => {
             external_reference: externalReference 
         };
 
+        // --- NOVO LOG: O que está sendo enviado para o Mercado Pago ---
+        console.log('Dados enviados ao Mercado Pago (preferenceBody):', JSON.stringify(preferenceBody, null, 2));
+
+
         const response = await preference.create({ body: preferenceBody });
         
+        // --- NOVO LOG: Resposta COMPLETA do Mercado Pago ---
+        console.log('Resposta COMPLETA do Mercado Pago:', JSON.stringify(response, null, 2));
+
+
+        // Verifica se a estrutura esperada existe antes de tentar acessá-la
+        if (!response || !response.body || !response.body.point_of_interaction || !response.body.point_of_interaction.transaction_data) {
+            console.error('Estrutura de resposta inesperada do Mercado Pago:', response);
+            return res.status(500).json({ 
+                status: 'error', 
+                message: 'Resposta do Mercado Pago não contém dados de Pix esperados.', 
+                details: response ? (response.body || response) : 'Resposta vazia.' 
+            });
+        }
+
         const pixInfo = response.body.point_of_interaction.transaction_data;
 
         res.status(200).json({
@@ -94,14 +109,14 @@ app.post('/create-mercadopago-pix', async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Erro ao criar preferência de pagamento:', 
-            error.response ? error.response.data : error.message,
-            error.response ? error.response.status : ''
+        console.error('Erro geral na rota /create-mercadopago-pix:', 
+            error.response ? error.response.data : error.message, // Detalhes da resposta de erro do MP
+            error.response ? `HTTP Status: ${error.response.status}` : '' // Status HTTP do erro do MP
         );
         res.status(500).json({ 
             status: 'error', 
             message: 'Erro ao processar o pagamento com Mercado Pago. Tente novamente.', 
-            details: error.response ? error.response.data : error.message 
+            details: error.message // Use error.message que vem do catch para o frontend
         });
     }
 });
