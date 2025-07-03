@@ -1,7 +1,7 @@
 require('dotenv').config(); // Carrega as variáveis de ambiente do arquivo .env
 
 const express = require('express');
-const { MercadoPagoConfig, Payment } = require('mercadopago'); // Mantém o Payment
+const { MercadoPagoConfig, Payment } = require('mercadopago');
 const cors = require('cors');
 const { v4: uuidv4 } = require('uuid'); // Para gerar externalReference único
 
@@ -10,24 +10,22 @@ const PORT = process.env.PORT || 3000;
 
 // --- CONFIGURAÇÕES IMPORTANTES ---
 const YOUR_FRONTEND_RENDER_URL = process.env.FRONTEND_URL || "https://acaiemcasasite.onrender.com";
-const YOUR_BACKEND_RENDER_URL = process.env.BACKEND_URL || "https://apihook.onrender.com"; // Seu URL do backend (API)
+const YOUR_BACKEND_RENDER_URL = process.env.BACKEND_URL || "https://apihook.onrender.com";
 
 const client = new MercadoPagoConfig({
     accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN
 });
-const payment = new Payment(client); // Não precisamos de Preference aqui
+const payment = new Payment(client);
 
 // Middleware para habilitar CORS
 app.use(cors({
-    origin: YOUR_FRONTEND_RENDER_URL, // Permite requisições APENAS do seu frontend
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Métodos HTTP permitidos, 'OPTIONS' é crucial
-    allowedHeaders: ['Content-Type', 'Authorization'], // Cabeçalhos permitidos na requisição
-    credentials: true // Permite que cookies, cabeçalhos de autorização, etc. sejam enviados (geralmente boa prática)
+    origin: YOUR_FRONTEND_RENDER_URL,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true
 }));
 
 // TRATAMENTO ESPECÍFICO PARA REQUISIÇÕES PREFLIGHT (OPTIONS)
-// Esta linha é crucial para CORS, especialmente com requisições POST complexas.
-// Ela garante que, para qualquer rota, o servidor responda corretamente à verificação OPTIONS.
 app.options('*', cors());
 
 // Middleware para parsear o corpo das requisições como JSON
@@ -38,6 +36,7 @@ app.post('/create-mercadopago-pix', async (req, res) => {
     try {
         const { customerName, cartItems, delivery, totalAmount } = req.body;
 
+        // ***** AQUI ESTÁ A ÚNICA MUDANÇA: REMOÇÃO DE '!externalReference' *****
         if (!customerName || !cartItems || cartItems.length === 0 || !totalAmount) {
             console.error('Dados do pedido incompletos na requisição Pix:', req.body);
             return res.status(400).json({ status: 'error', message: 'Dados do pedido incompletos.' });
@@ -62,7 +61,7 @@ app.post('/create-mercadopago-pix', async (req, res) => {
             description: finalDescription,
             payment_method_id: 'pix',
             payer: {
-                email: "test_user_123456@test.com", // Melhor usar um email real do cliente se disponível
+                email: "test_user_123456@test.com",
                 first_name: customerName,
             },
             metadata: {
