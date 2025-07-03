@@ -1,7 +1,7 @@
 require('dotenv').config(); // Carrega as variáveis de ambiente do arquivo .env
 
 const express = require('express');
-const { MercadoPagoConfig, Preference, Payment } = require('mercadopago'); // Mantém o Payment
+const { MercadoPagoConfig, Payment } = require('mercadopago'); // Mantém o Payment
 const cors = require('cors');
 const { v4: uuidv4 } = require('uuid'); // Para gerar externalReference único
 
@@ -19,8 +19,16 @@ const payment = new Payment(client); // Não precisamos de Preference aqui
 
 // Middleware para habilitar CORS
 app.use(cors({
-    origin: YOUR_FRONTEND_RENDER_URL
+    origin: YOUR_FRONTEND_RENDER_URL, // Permite requisições APENAS do seu frontend
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Métodos HTTP permitidos, 'OPTIONS' é crucial
+    allowedHeaders: ['Content-Type', 'Authorization'], // Cabeçalhos permitidos na requisição
+    credentials: true // Permite que cookies, cabeçalhos de autorização, etc. sejam enviados (geralmente boa prática)
 }));
+
+// TRATAMENTO ESPECÍFICO PARA REQUISIÇÕES PREFLIGHT (OPTIONS)
+// Esta linha é crucial para CORS, especialmente com requisições POST complexas.
+// Ela garante que, para qualquer rota, o servidor responda corretamente à verificação OPTIONS.
+app.options('*', cors());
 
 // Middleware para parsear o corpo das requisições como JSON
 app.use(express.json());
@@ -28,7 +36,7 @@ app.use(express.json());
 // Rota para criar um pagamento Pix
 app.post('/create-mercadopago-pix', async (req, res) => {
     try {
-        const { customerName, cartItems, delivery, totalAmount } = req.body; // Remove externalReference do req.body, vamos gerar um aqui
+        const { customerName, cartItems, delivery, totalAmount } = req.body;
 
         if (!customerName || !cartItems || cartItems.length === 0 || !totalAmount) {
             console.error('Dados do pedido incompletos na requisição Pix:', req.body);
@@ -39,9 +47,9 @@ app.post('/create-mercadopago-pix', async (req, res) => {
         let totalForPayment = totalAmount;
 
         const description = cartItems.map(item => {
-            let itemDesc = item.name; // Use item.name, pois o frontend já passa o nome
+            let itemDesc = item.name;
             if (item.complements && item.complements.length > 0) {
-                const compNames = item.complements.map(c => c.name).join(', '); // Use c.name, pois o frontend já passa o nome do complemento
+                const compNames = item.complements.map(c => c.name).join(', ');
                 itemDesc += ` (${compNames})`;
             }
             return itemDesc;
@@ -56,16 +64,13 @@ app.post('/create-mercadopago-pix', async (req, res) => {
             payer: {
                 email: "test_user_123456@test.com", // Melhor usar um email real do cliente se disponível
                 first_name: customerName,
-                // document_number: "12345678909", // Opcional: CPF do cliente se você coletar
-                // document_type: "CPF"
             },
             metadata: {
                 external_reference_app: externalReference,
                 customer_name_app: customerName,
-                // Você pode adicionar mais dados do pedido aqui, como itens, endereço, etc.
             },
-            external_reference: externalReference, // Usar o ID único gerado
-            notification_url: `${YOUR_BACKEND_RENDER_URL}/mercadopago-webhook`, // Garanta que esta URL esteja correta no MP
+            external_reference: externalReference,
+            notification_url: `${YOUR_BACKEND_RENDER_URL}/mercadopago-webhook`,
         };
 
         console.log('Dados enviados à Payments API para Pix (paymentData):', JSON.stringify(paymentData, null, 2));
@@ -74,8 +79,6 @@ app.post('/create-mercadopago-pix', async (req, res) => {
 
         console.log('Resposta COMPLETA da Payments API (criação):', JSON.stringify(paymentResponse, null, 2));
 
-        // --- VERIFICAÇÃO E EXTRAÇÃO DO QR CODE ---
-        // Para Pix com a API de Payments, o QR code fica em `point_of_interaction.transaction_data`
         if (!paymentResponse || !paymentResponse.point_of_interaction || !paymentResponse.point_of_interaction.transaction_data || !paymentResponse.point_of_interaction.transaction_data.qr_code_base64 || !paymentResponse.point_of_interaction.transaction_data.qr_code) {
             console.error('Estrutura de resposta inesperada ou Pix data ausente:', JSON.stringify(paymentResponse, null, 2));
             return res.status(500).json({
@@ -91,8 +94,8 @@ app.post('/create-mercadopago-pix', async (req, res) => {
             status: 'success',
             message: 'Pagamento Pix criado com sucesso.',
             paymentId: paymentResponse.id,
-            qrCodeImage: `data:image/png;base64,${pixInfo.qr_code_base64}`, // Formato para o frontend exibir a imagem
-            pixCopiaECola: pixInfo.qr_code, // O código para copiar e colar
+            qrCodeImage: `data:image/png;base64,${pixInfo.qr_code_base64}`,
+            pixCopiaECola: pixInfo.qr_code,
         });
 
     } catch (error) {
@@ -112,7 +115,7 @@ app.post('/create-mercadopago-pix', async (req, res) => {
 app.post('/mercadopago-webhook', async (req, res) => {
     console.log(`--- Webhook do Mercado Pago recebido (Timestamp: ${new Date().toISOString()}) ---`);
     console.log('Query Params (topic, id):', req.query);
-    console.log('Corpo da Requisição Webhook:', JSON.stringify(req.body, null, 2)); // Log do corpo completo
+    console.log('Corpo da Requisição Webhook:', JSON.stringify(req.body, null, 2));
 
     const topic = req.query.topic || req.body.topic || req.body.type;
     const notificationId = req.query.id || req.body.data?.id || req.body.resource;
@@ -139,9 +142,6 @@ app.post('/mercadopago-webhook', async (req, res) => {
 
             if (paymentStatus === 'approved') {
                 console.log(`✅ Pagamento APROVADO para pedido: ${externalReference}`);
-                // **AQUI VOCÊ FINALIZARIA O PEDIDO NO SEU BANCO DE DADOS E NOTIFICARIA O FRONTEND/ADMIN**
-                // Se você tiver um banco de dados, usaria o externalReference para encontrar o pedido
-                // e marcá-lo como pago.
             } else if (paymentStatus === 'pending') {
                 console.log(`⏳ Pagamento PENDENTE para pedido: ${externalReference}`);
             } else {
