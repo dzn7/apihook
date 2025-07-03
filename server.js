@@ -8,16 +8,14 @@ const app = express();
 const PORT = process.env.PORT || 3000; 
 
 // --- CONFIGURAÇÕES IMPORTANTES ---
-// **SUAS URLs REAIS DO RENDER**
 const YOUR_FRONTEND_RENDER_URL = "https://acaiemcasasite.onrender.com"; 
 const YOUR_BACKEND_RENDER_URL = "https://apihook.onrender.com"; 
 
-// **INICIALIZAÇÃO DA SDK DO MERCADO PAGO (CORRIGIDA PARA V2.x)**
 const client = new MercadoPagoConfig({
     accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN 
 });
-const preference = new Preference(client); // Mantida, mas não usada nesta rota.
-const payment = new Payment(client); // Usaremos esta instância.
+const preference = new Preference(client); 
+const payment = new Payment(client); 
 
 
 // Middleware para habilitar CORS
@@ -69,28 +67,26 @@ app.post('/create-mercadopago-pix', async (req, res) => {
 
         console.log('Dados enviados à Payments API para Pix (paymentData):', JSON.stringify(paymentData, null, 2));
 
-        const response = await payment.create({ body: paymentData }); // A resposta da SDK v2 é direta
+        const response = await payment.create({ body: paymentData }); 
 
         console.log('Resposta COMPLETA da Payments API:', JSON.stringify(response, null, 2));
 
 
-        // **VERIFICAÇÃO CORRIGIDA:** Acessa as propriedades diretamente do objeto 'response'
         if (!response || !response.point_of_interaction || !response.point_of_interaction.transaction_data) {
             console.error('Estrutura de resposta inesperada da Payments API (falha no point_of_interaction):', JSON.stringify(response, null, 2));
             return res.status(500).json({ 
                 status: 'error', 
                 message: 'Resposta da Payments API não contém dados de Pix esperados.', 
-                details: response ? response : 'Resposta vazia.' // Retorna o objeto response inteiro para depuração
+                details: response ? response : 'Resposta vazia.' 
             });
         }
 
-        // **ACESSO CORRIGIDO:** Acessa as propriedades diretamente do objeto 'response'
         const pixInfo = response.point_of_interaction.transaction_data;
 
         res.status(200).json({
             status: 'success',
             message: 'Pagamento Pix criado com sucesso.',
-            paymentId: response.id, // **ACESSO CORRIGIDO:** ID do pagamento recém-criado
+            paymentId: response.id, 
             qr_code_base64: pixInfo.qr_code_base64, 
             qr_code: pixInfo.qr_code,             
         });
@@ -112,21 +108,27 @@ app.post('/create-mercadopago-pix', async (req, res) => {
 app.post('/mercadopago-webhook', async (req, res) => {
     console.log(`--- Webhook do Mercado Pago recebido (Timestamp: ${new Date().toISOString()}) ---`);
     console.log('Query Params (topic, id):', req.query); 
-    console.log('Corpo da Requisição Webhook:', req.body); 
+    console.log('Corpo da Requisição Webhook:', JSON.stringify(req.body, null, 2)); // Log do corpo completo
 
-    // O Mercado Pago envia notificações para vários tópicos. O mais importante é 'payment'.
-    // A query param 'id' pode vir em 'req.query.id' OU 'req.query.data.id' dependendo do tipo de notificação.
-    // O 'topic' é o que define o tipo de evento (ex: 'payment').
-    const topic = req.query.topic || req.body.type; // Tenta pegar de req.query ou req.body
-    const notificationId = req.query.id || req.body.data?.id; // Tenta pegar de req.query ou req.body.data.id
+    // Extração mais robusta de 'topic' e 'id'
+    const topic = req.query.topic || req.body.topic || req.body.type; // Tenta pegar de req.query, req.body.topic ou req.body.type
+    const notificationId = req.query.id || req.body.data?.id || req.body.resource; // Tenta pegar de req.query, req.body.data.id ou req.body.resource
 
-    if (topic === 'payment' && notificationId) { // Verifica se é um tópico 'payment' e se tem um ID
+    console.log(`Webhook -> Tópico Extraído: '${topic}', ID Extraído: '${notificationId}'`); // DEBUG EXTRA
+
+    if (topic === 'payment' && notificationId) {
         const paymentId = notificationId; 
 
         try {
-            const paymentDetails = await payment.get({ id: paymentId }); // Retorna o objeto de pagamento direto
+            const paymentDetails = await payment.get({ id: paymentId }); 
 
-            // **ACESSO CORRIGIDO:** Acessa as propriedades diretamente do objeto 'paymentDetails'
+            // **VERIFICAÇÃO ADICIONAL DE SEGURANÇA:**
+            if (!paymentDetails || typeof paymentDetails.status === 'undefined') {
+                console.error('Resposta de payment.get() inesperada ou incompleta para paymentId:', paymentId, JSON.stringify(paymentDetails, null, 2));
+                return res.status(500).send('Erro: Detalhes do pagamento não puderam ser obtidos ou são inválidos.');
+            }
+            
+            // Acesso direto às propriedades (status e external_reference)
             const paymentStatus = paymentDetails.status; 
             const externalReference = paymentDetails.external_reference; 
 
@@ -136,6 +138,8 @@ app.post('/mercadopago-webhook', async (req, res) => {
 
             if (paymentStatus === 'approved') {
                 console.log(`✅ Pagamento APROVADO para pedido: ${externalReference}`);
+                // **AQUI VOCÊ FINALIZARIA O PEDIDO NO SEU BANCO DE DADOS E LIMPARIA O CARRINHO**
+                // (Se você tivesse um DB, e o frontend estivesse ouvindo por WebSockets para limpar o localstorage)
             } else if (paymentStatus === 'pending') {
                 console.log(`⏳ Pagamento PENDENTE para pedido: ${externalReference}`);
             } else {
@@ -149,7 +153,7 @@ app.post('/mercadopago-webhook', async (req, res) => {
             res.status(500).send('Erro interno ao processar webhook.');
         }
     } else {
-        console.log(`Webhook recebido, mas tópico '${topic}' ou ID '${notificationId}' não é de pagamento válido. Ignorando.`);
+        console.log(`Webhook recebido, mas tópico '${topic}' ou ID '${notificationId}' não é de pagamento válido para processamento. Ignorando.`);
         res.status(200).send('Webhook recebido, mas tópico ou ID não relevante para esta aplicação.');
     }
 });
