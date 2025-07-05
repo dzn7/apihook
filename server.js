@@ -270,7 +270,7 @@ app.post('/create-mercadopago-preference', async (req, res) => {
                 failure: `${frontendBaseUrl}/failure.html`, 
                 pending: `${frontendBaseUrl}/pending.html`
             },
-            auto_return: 'approved_only', 
+            auto_return: 'approved', 
             notification_url: notificationUrl,
         };
 
