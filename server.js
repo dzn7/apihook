@@ -3,7 +3,7 @@
 require('dotenv').config();
 
 const express = require('express');
-const { MercadoPagoConfig, Payment, Preference } = require('mercadopago'); 
+const { MercadoPagoConfig, Payment, Preference } = require('mercadopago'); // ADICIONE 'Preference' AQUI
 const cors = require('cors');
 
 const app = express();
@@ -21,7 +21,7 @@ console.log('🔑 Token configurado:', accessToken ? `${accessToken.substring(0,
 
 const client = new MercadoPagoConfig({ accessToken });
 const payment = new Payment(client);
-const preference = new Preference(client); 
+const preference = new Preference(client); // ADICIONE ESTA LINHA
 
 // --- CONFIGURAÇÃO DE CORS (Permite múltiplos domínios) ---
 const allowedOrigins = [
@@ -59,7 +59,7 @@ app.post('/create-mercadopago-pix', async (req, res) => {
     console.log('📦 Dados recebidos:', JSON.stringify(req.body, null, 2));
     
     try {
-        const { customerName, customerEmail, customerLastName, items, total } = req.body; // ADICIONADO customerLastName
+        const { customerName, customerEmail, items, total } = req.body;
 
         // Validação mais detalhada dos dados
         const validationErrors = [];
@@ -71,10 +71,6 @@ app.post('/create-mercadopago-pix', async (req, res) => {
         if (!customerEmail || typeof customerEmail !== 'string' || !customerEmail.includes('@')) {
             validationErrors.push('customerEmail é obrigatório e deve ser um email válido');
         }
-        // Validação de customerLastName (opcional, adicione se quiser torná-lo obrigatório)
-        // if (customerLastName && typeof customerLastName !== 'string') {
-        //     validationErrors.push('customerLastName deve ser uma string válida');
-        // }
         
         if (!items || !Array.isArray(items) || items.length === 0) {
             validationErrors.push('items é obrigatório e deve ser um array não vazio');
@@ -88,16 +84,6 @@ app.post('/create-mercadopago-pix', async (req, res) => {
                 }
                 if (typeof item.unit_price !== 'number' || item.unit_price <= 0) {
                     validationErrors.push(`Item ${index}: unit_price é obrigatório e deve ser um número positivo`);
-                }
-                // Validações para campos recomendados:
-                if (item.id && typeof item.id !== 'string') { 
-                    validationErrors.push(`Item ${index}: id deve ser uma string`);
-                }
-                if (item.description && typeof item.description !== 'string') { 
-                    validationErrors.push(`Item ${index}: description deve ser uma string`);
-                }
-                if (item.category_id && typeof item.category_id !== 'string') { 
-                    validationErrors.push(`Item ${index}: category_id deve ser uma string`);
                 }
             });
         }
@@ -133,18 +119,9 @@ app.post('/create-mercadopago-pix', async (req, res) => {
             payer: {
                 email: customerEmail.trim(),
                 first_name: customerName.trim(),
-                last_name: customerLastName ? customerLastName.trim() : undefined, // ENVIANDO SOBRENOME
             },
             external_reference: externalReference,
             notification_url: process.env.BACKEND_URL ? `${process.env.BACKEND_URL}/mercadopago-webhook` : undefined,
-            items: items.map(item => ({ // ENVIANDO DETALHES COMPLETOS DO ITEM
-                id: item.id || undefined,
-                title: item.title,
-                description: item.description || undefined,
-                category_id: item.category_id || undefined,
-                quantity: parseInt(item.quantity),
-                unit_price: parseFloat(item.unit_price)
-            })),
         };
 
         // Validação da notification_url
@@ -213,7 +190,8 @@ app.post('/create-mercadopago-pix', async (req, res) => {
             // Incluir mais detalhes em desenvolvimento
             ...(process.env.NODE_ENV === 'development' && {
                 stack: error.stack,
-                cause: error.cause
+                cause: error.cause,
+                response: error.response
             })
         };
 
@@ -228,7 +206,7 @@ app.post('/create-mercadopago-preference', async (req, res) => {
     console.log('📦 Dados recebidos para preferência:', JSON.stringify(req.body, null, 2));
 
     try {
-        const { items, customerName, customerEmail, customerLastName, total } = req.body; // ADICIONADO customerLastName
+        const { items, customerName, customerEmail, total } = req.body;
 
         // Validação mais detalhada dos dados da requisição
         const validationErrors = [];
@@ -244,16 +222,6 @@ app.post('/create-mercadopago-preference', async (req, res) => {
                 }
                 if (typeof item.quantity !== 'number' || item.quantity <= 0 || !Number.isInteger(item.quantity)) {
                     validationErrors.push(`Item ${index}: quantity é obrigatório e deve ser um inteiro positivo`);
-                }
-                // Validações para campos recomendados:
-                if (item.id && typeof item.id !== 'string') { 
-                    validationErrors.push(`Item ${index}: id deve ser uma string`);
-                }
-                if (item.description && typeof item.description !== 'string') { 
-                    validationErrors.push(`Item ${index}: description deve ser uma string`);
-                }
-                if (item.category_id && typeof item.category_id !== 'string') { 
-                    validationErrors.push(`Item ${index}: category_id deve ser uma string`);
                 }
             });
         }
@@ -284,21 +252,17 @@ app.post('/create-mercadopago-preference', async (req, res) => {
             return res.status(500).json({ message: 'Erro de configuração: URL de notificação não definida.' });
         }
         
-        const frontendBaseUrl = process.env.FRONTEND_URL || 'http://127.0.0.1:5500'; 
+        const frontendBaseUrl = process.env.FRONTEND_URL || 'http://127.0.0.1:5500'; // Define a URL base do frontend
 
         const preferenceBody = {
-            items: items.map(item => ({ // ENVIANDO DETALHES COMPLETOS DO ITEM
-                id: item.id || undefined,
+            items: items.map(item => ({
                 title: item.title,
-                description: item.description || undefined,
-                category_id: item.category_id || undefined,
-                quantity: parseInt(item.quantity),
-                unit_price: parseFloat(item.unit_price)
+                unit_price: parseFloat(item.unit_price),
+                quantity: parseInt(item.quantity)
             })),
             payer: {
                 name: customerName.trim(),
                 email: customerEmail.trim(),
-                last_name: customerLastName ? customerLastName.trim() : undefined, // ENVIANDO SOBRENOME
             },
             external_reference: externalReference,
             back_urls: {
@@ -306,7 +270,7 @@ app.post('/create-mercadopago-preference', async (req, res) => {
                 failure: `${frontendBaseUrl}/failure.html`, 
                 pending: `${frontendBaseUrl}/pending.html`
             },
-            auto_return: 'approved_only', 
+            auto_return: 'approved', 
             notification_url: notificationUrl,
         };
 
@@ -356,10 +320,6 @@ app.post('/create-mercadopago-card', async (req, res) => {
             return res.status(400).json({ message: 'Dados do pagamento com cartão incompletos.' });
         }
 
-        // Supondo que você queira usar a descrição do item ou um valor padrão para o statement_descriptor
-        // A descrição deve ser curta para caber na fatura (geralmente até 10-12 caracteres)
-        const statement_descriptor_text = description ? description.substring(0, 10).toUpperCase() : 'EDNAILNCH'; // AÇÃO RECOMENDADA: statement_descriptor (limitado e maiúsculas)
-        
         const paymentData = {
             token,
             issuer_id,
@@ -368,9 +328,8 @@ app.post('/create-mercadopago-card', async (req, res) => {
             installments,
             payer,
             external_reference,
-            description, // A descrição completa do pedido pode ir aqui
+            description,
             notification_url: process.env.BACKEND_URL ? `${process.env.BACKEND_URL}/mercadopago-webhook` : undefined,
-            statement_descriptor: statement_descriptor_text // ADICIONADO: statement_descriptor
         };
 
         // Validação da notification_url
@@ -446,7 +405,7 @@ app.get('/debug', (req, res) => {
         port: PORT,
         mercadoPagoToken: accessToken ? 'Configurado' : 'Não configurado',
         backendUrl: process.env.BACKEND_URL || 'Não configurado',
-        frontendUrl: process.env.FRONTEND_URL || 'Não configurado', 
+        frontendUrl: process.env.FRONTEND_URL || 'Não configurado', // ADICIONE ESTA LINHA
         allowedOrigins: allowedOrigins
     });
 });
@@ -457,7 +416,7 @@ app.listen(PORT, () => {
     console.log(`🌐 Ambiente: ${process.env.NODE_ENV || 'development'}`);
     console.log(`💳 Mercado Pago configurado: ${accessToken ? 'SIM' : 'NÃO'}`);
     console.log(`🔗 Backend URL: ${process.env.BACKEND_URL || 'Não configurado'}`);
-    console.log(`🌐 Frontend URL (para back_urls): ${process.env.FRONTEND_URL || 'Não configurado'}`); 
+    console.log(`🌐 Frontend URL (para back_urls): ${process.env.FRONTEND_URL || 'Não configurado'}`); // ADICIONE ESTA LINHA
     console.log(`🎯 Origens permitidas:`, allowedOrigins);
 });
 
