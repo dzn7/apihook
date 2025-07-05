@@ -131,4 +131,4 @@ app.post('/mercadopago-webhook', (req, res) => {
     const topic = req.query.topic || req.body.topic;
     if (topic === 'payment' || req.body.type === 'payment') {
         const paymentId = req.query.id || req.body.data.id;
-        console.log(`Webhook de pagamento recebido para o ID: ${paymentId
+        console.log(`Webhook de pagamento recebido para o ID: ${paymentId}`);
