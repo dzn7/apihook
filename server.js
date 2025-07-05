@@ -3,7 +3,7 @@
 require('dotenv').config();
 
 const express = require('express');
-const { MercadoPagoConfig, Payment } = require('mercadopago');
+const { MercadoPagoConfig, Payment, Preference } = require('mercadopago'); // ADICIONE 'Preference' AQUI
 const cors = require('cors');
 
 const app = express();
@@ -21,6 +21,7 @@ console.log('🔑 Token configurado:', accessToken ? `${accessToken.substring(0,
 
 const client = new MercadoPagoConfig({ accessToken });
 const payment = new Payment(client);
+const preference = new Preference(client); // ADICIONE ESTA LINHA
 
 // --- CONFIGURAÇÃO DE CORS (Permite múltiplos domínios) ---
 const allowedOrigins = [
@@ -73,6 +74,18 @@ app.post('/create-mercadopago-pix', async (req, res) => {
         
         if (!items || !Array.isArray(items) || items.length === 0) {
             validationErrors.push('items é obrigatório e deve ser um array não vazio');
+        } else {
+            items.forEach((item, index) => {
+                if (!item.title || typeof item.title !== 'string' || item.title.trim() === '') {
+                    validationErrors.push(`Item ${index}: title é obrigatório`);
+                }
+                if (typeof item.quantity !== 'number' || item.quantity <= 0 || !Number.isInteger(item.quantity)) {
+                    validationErrors.push(`Item ${index}: quantity é obrigatório e deve ser um inteiro positivo`);
+                }
+                if (typeof item.unit_price !== 'number' || item.unit_price <= 0) {
+                    validationErrors.push(`Item ${index}: unit_price é obrigatório e deve ser um número positivo`);
+                }
+            });
         }
         
         if (!total || typeof total !== 'number' || total <= 0) {
@@ -92,7 +105,7 @@ app.post('/create-mercadopago-pix', async (req, res) => {
         const externalReference = `acai-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
         
         // Descrição do pedido (limitada a 255 caracteres)
-        const itemsDescription = items.map(item => `${item.name} (${item.quantity}x)`).join(', ');
+        const itemsDescription = items.map(item => `${item.title} (${item.quantity}x)`).join(', '); // Usar item.title
         const description = `Pedido Açaí em Casa - ${customerName}: ${itemsDescription}`.substring(0, 255);
 
         console.log('🏷️ Referência externa:', externalReference);
@@ -110,6 +123,13 @@ app.post('/create-mercadopago-pix', async (req, res) => {
             external_reference: externalReference,
             notification_url: process.env.BACKEND_URL ? `${process.env.BACKEND_URL}/mercadopago-webhook` : undefined,
         };
+
+        // Validação da notification_url
+        if (!paymentData.notification_url) {
+            console.error('ERRO: notification_url não pode ser undefined para PIX. BACKEND_URL não configurada?');
+            return res.status(500).json({ message: 'Erro de configuração: URL de notificação não definida para PIX.' });
+        }
+
 
         console.log('💳 Dados do pagamento PIX:', JSON.stringify(paymentData, null, 2));
 
@@ -170,7 +190,8 @@ app.post('/create-mercadopago-pix', async (req, res) => {
             // Incluir mais detalhes em desenvolvimento
             ...(process.env.NODE_ENV === 'development' && {
                 stack: error.stack,
-                cause: error.cause
+                cause: error.cause,
+                response: error.response
             })
         };
 
@@ -178,7 +199,115 @@ app.post('/create-mercadopago-pix', async (req, res) => {
     }
 });
 
-// ROTA PARA CRIAR PAGAMENTO COM CARTÃO (mantida igual)
+
+// ROTA PARA CRIAR PREFERÊNCIA DO MERCADO PAGO (PARA BRICKS) - NOVO ENDPOINT
+app.post('/create-mercadopago-preference', async (req, res) => {
+    console.log('🔄 Iniciando criação de preferência do Mercado Pago...');
+    console.log('📦 Dados recebidos para preferência:', JSON.stringify(req.body, null, 2));
+
+    try {
+        const { items, customerName, customerEmail, total } = req.body;
+
+        // Validação mais detalhada dos dados da requisição
+        const validationErrors = [];
+        if (!items || !Array.isArray(items) || items.length === 0) {
+            validationErrors.push('items é obrigatório e deve ser um array não vazio');
+        } else {
+            items.forEach((item, index) => {
+                if (!item.title || typeof item.title !== 'string' || item.title.trim() === '') {
+                    validationErrors.push(`Item ${index}: title é obrigatório`);
+                }
+                if (typeof item.unit_price !== 'number' || item.unit_price <= 0) {
+                    validationErrors.push(`Item ${index}: unit_price é obrigatório e deve ser um número positivo`);
+                }
+                if (typeof item.quantity !== 'number' || item.quantity <= 0 || !Number.isInteger(item.quantity)) {
+                    validationErrors.push(`Item ${index}: quantity é obrigatório e deve ser um inteiro positivo`);
+                }
+            });
+        }
+        if (!customerName || typeof customerName !== 'string' || customerName.trim() === '') {
+            validationErrors.push('customerName é obrigatório e deve ser uma string não vazia');
+        }
+        if (!customerEmail || typeof customerEmail !== 'string' || !customerEmail.includes('@')) {
+            validationErrors.push('customerEmail é obrigatório e deve ser um email válido');
+        }
+        if (typeof total !== 'number' || total <= 0) {
+            validationErrors.push('total é obrigatório e deve ser um número maior que zero');
+        }
+
+        if (validationErrors.length > 0) {
+            console.error('❌ Erros de validação para preferência:', validationErrors);
+            return res.status(400).json({ 
+                message: 'Dados incompletos ou inválidos para criar preferência.',
+                errors: validationErrors,
+                receivedData: req.body
+            });
+        }
+
+        const externalReference = `pref-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const notificationUrl = process.env.BACKEND_URL ? `${process.env.BACKEND_URL}/mercadopago-webhook` : undefined;
+
+        if (!notificationUrl) {
+            console.error('ERRO: notification_url não pode ser undefined. BACKEND_URL não configurada?');
+            return res.status(500).json({ message: 'Erro de configuração: URL de notificação não definida.' });
+        }
+        
+        const frontendBaseUrl = process.env.FRONTEND_URL || 'http://127.0.0.1:5500'; // Define a URL base do frontend
+
+        const preferenceBody = {
+            items: items.map(item => ({
+                title: item.title,
+                unit_price: parseFloat(item.unit_price),
+                quantity: parseInt(item.quantity)
+            })),
+            payer: {
+                name: customerName.trim(),
+                email: customerEmail.trim(),
+            },
+            external_reference: externalReference,
+            back_urls: {
+                success: `${frontendBaseUrl}/success.html`, 
+                failure: `${frontendBaseUrl}/failure.html`, 
+                pending: `${frontendBaseUrl}/pending.html`
+            },
+            auto_return: 'approved_only', 
+            notification_url: notificationUrl,
+        };
+
+        console.log('🔗 Criando Preferência com body:', JSON.stringify(preferenceBody, null, 2));
+
+        const createdPreference = await preference.create({ body: preferenceBody });
+        console.log('✅ Preferência criada com sucesso:', JSON.stringify(createdPreference, null, 2));
+
+        res.status(200).json({ id: createdPreference.id });
+
+    } catch (error) {
+        console.error('💥 ERRO DETALHADO ao criar preferência:');
+        console.error('Tipo do erro:', error.constructor.name);
+        console.error('Mensagem:', error.message);
+        console.error('Stack trace:', error.stack);
+        if (error.cause) {
+            console.error('Causa do erro (erro da API do MP):', JSON.stringify(error.cause, null, 2));
+        }
+        if (error.response) {
+            console.error('Resposta de erro completa:', JSON.stringify(error.response, null, 2));
+        }
+
+        res.status(500).json({
+            message: 'Erro ao criar preferência de pagamento.',
+            details: error.message,
+            timestamp: new Date().toISOString(),
+            ...(process.env.NODE_ENV === 'development' && {
+                stack: error.stack,
+                cause: error.cause,
+                response: error.response
+            })
+        });
+    }
+});
+
+
+// ROTA PARA CRIAR PAGAMENTO COM CARTÃO (mantida igual, será chamada pelo Brick)
 app.post('/create-mercadopago-card', async (req, res) => {
     console.log('🔄 Iniciando criação de pagamento com cartão...');
     console.log('📦 Dados recebidos:', JSON.stringify(req.body, null, 2));
@@ -202,6 +331,12 @@ app.post('/create-mercadopago-card', async (req, res) => {
             description,
             notification_url: process.env.BACKEND_URL ? `${process.env.BACKEND_URL}/mercadopago-webhook` : undefined,
         };
+
+        // Validação da notification_url
+        if (!paymentData.notification_url) {
+            console.error('ERRO: notification_url não pode ser undefined para Cartão. BACKEND_URL não configurada?');
+            return res.status(500).json({ message: 'Erro de configuração: URL de notificação não definida para Cartão.' });
+        }
 
         console.log('💳 Dados do pagamento cartão:', JSON.stringify(paymentData, null, 2));
 
@@ -270,6 +405,7 @@ app.get('/debug', (req, res) => {
         port: PORT,
         mercadoPagoToken: accessToken ? 'Configurado' : 'Não configurado',
         backendUrl: process.env.BACKEND_URL || 'Não configurado',
+        frontendUrl: process.env.FRONTEND_URL || 'Não configurado', // ADICIONE ESTA LINHA
         allowedOrigins: allowedOrigins
     });
 });
@@ -280,6 +416,7 @@ app.listen(PORT, () => {
     console.log(`🌐 Ambiente: ${process.env.NODE_ENV || 'development'}`);
     console.log(`💳 Mercado Pago configurado: ${accessToken ? 'SIM' : 'NÃO'}`);
     console.log(`🔗 Backend URL: ${process.env.BACKEND_URL || 'Não configurado'}`);
+    console.log(`🌐 Frontend URL (para back_urls): ${process.env.FRONTEND_URL || 'Não configurado'}`); // ADICIONE ESTA LINHA
     console.log(`🎯 Origens permitidas:`, allowedOrigins);
 });
 
