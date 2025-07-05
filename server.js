@@ -117,7 +117,6 @@ app.post('/create-mercadopago-card', async (req, res) => {
     }
 });
 
-
 // ROTA DE WEBHOOK
 app.post('/mercadopago-webhook', (req, res) => {
     console.log('--- Webhook Recebido ---');
@@ -132,3 +131,44 @@ app.post('/mercadopago-webhook', (req, res) => {
     if (topic === 'payment' || req.body.type === 'payment') {
         const paymentId = req.query.id || req.body.data.id;
         console.log(`Webhook de pagamento recebido para o ID: ${paymentId}`);
+        
+        // Aqui você pode adicionar lógica para processar o webhook
+        // Por exemplo: verificar status do pagamento, atualizar banco de dados, etc.
+    }
+});
+
+// ROTA DE TESTE
+app.get('/', (req, res) => {
+    res.json({ 
+        message: 'API Mercado Pago - Açaí em Casa', 
+        status: 'Online',
+        timestamp: new Date().toISOString() 
+    });
+});
+
+// ROTA DE HEALTH CHECK
+app.get('/health', (req, res) => {
+    res.status(200).json({ 
+        status: 'OK', 
+        uptime: process.uptime(),
+        timestamp: new Date().toISOString()
+    });
+});
+
+// --- INICIALIZAÇÃO DO SERVIDOR ---
+app.listen(PORT, () => {
+    console.log(`🚀 Servidor rodando na porta ${PORT}`);
+    console.log(`🌐 Ambiente: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`💳 Mercado Pago configurado: ${accessToken ? 'SIM' : 'NÃO'}`);
+});
+
+// Tratamento de erros não capturados
+process.on('uncaughtException', (error) => {
+    console.error('Erro não capturado:', error);
+    process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Promise rejeitada não tratada:', reason);
+    process.exit(1);
+});
